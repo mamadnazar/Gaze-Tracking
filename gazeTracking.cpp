@@ -1,3 +1,5 @@
+// g++ $(pkg-config --cflags --libs opencv4) -std=c++11 gazeTracking.cpp -o gazeTracking
+
 #include <iostream>
 
 #include <opencv2/core/core.hpp>
@@ -27,13 +29,13 @@ cv::Rect getLeftmostEye(std::vector<cv::Rect> &eyes)
 // Getting Right Eye
 cv::Rect getRightmostEye(std::vector<cv::Rect> &eyes)
 {
-    int rightmost = -1;
+    int rightmost = -999999;
     int rightmostIndex = -1;
     for (int i = 0; i < eyes.size(); i++)
     {
-        if (eyes[i].tl().x > rightmost)
+        if (eyes[i].br().x > rightmost)
         {
-            rightmost = eyes[i].tl().x;
+            rightmost = eyes[i].br().x;
             rightmostIndex = i;
         }
     }
@@ -102,7 +104,7 @@ void detectEyes(cv::Mat &frame, cv::CascadeClassifier &faceCascade, cv::CascadeC
     cv::cvtColor(frame, grayscale, cv::COLOR_BGR2GRAY); // convert image to grayscale
     cv::equalizeHist(grayscale, grayscale); // enhance image contrast
     std::vector<cv::Rect> faces;
-    faceCascade.detectMultiScale(grayscale, faces, 1.1, 2, 0 | cv::CASCADE_SCALE_IMAGE, cv::Size(100, 100));
+    faceCascade.detectMultiScale(grayscale, faces, 1.1, 2, 0 | cv::CASCADE_SCALE_IMAGE, cv::Size(150, 150));
     
     // Eye Detection
     if (faces.size() == 0) {
@@ -111,10 +113,10 @@ void detectEyes(cv::Mat &frame, cv::CascadeClassifier &faceCascade, cv::CascadeC
     }
     cv::Mat face = frame(faces[0]); // crop the face
     std::vector<cv::Rect> eyes;
-    eyeCascade.detectMultiScale(face, eyes, 1.1, 2, 0 | cv::CASCADE_SCALE_IMAGE, cv::Size(20, 20)); // same thing as above
+    eyeCascade.detectMultiScale(face, eyes, 1.1, 2, 0 | cv::CASCADE_SCALE_IMAGE, cv::Size(15, 15)); // same thing as above
     
     // Draw Regions
-    rectangle(frame, faces[0].tl(), faces[0].br(), cv::Scalar(255, 0, 0), 2);
+    rectangle(frame, faces[0].tl(), faces[0].br(), cv::Scalar(255, 255, 255), 2);
     if (eyes.size() != 2) {
         //std::cout << "Eyes not detected" << std::endl;
         return; // both eyes were not detected
@@ -124,7 +126,7 @@ void detectEyes(cv::Mat &frame, cv::CascadeClassifier &faceCascade, cv::CascadeC
         rectangle(frame, faces[0].tl() + eye.tl(), faces[0].tl() + eye.br(), cv::Scalar(0, 255, 0), 2);
     }
     
-    //
+    // Detect and draw Left Iris
     cv::Rect eyeRect = getLeftmostEye(eyes);
     cv::Mat eye = face(eyeRect);
     cv::Mat grayscaleEye;
@@ -133,23 +135,31 @@ void detectEyes(cv::Mat &frame, cv::CascadeClassifier &faceCascade, cv::CascadeC
     std::vector<cv::Vec3f> circles;
     cv::HoughCircles(grayscaleEye, circles, cv::HOUGH_GRADIENT, 1, eye.cols / 8, 250, 15, eye.rows / 8, eye.rows / 3);
 
-    //
     if (circles.size() > 0)
     {
         cv::Vec3f eyeball = getEyeball(eye, circles);
         // stabilizing
         cv::Point center(eyeball[0], eyeball[1]);
         leftEyeCenters.push_back(center);
-        center = stabilize(leftEyeCenters, 5); // we are using the last 5
+        center = stabilize(leftEyeCenters, 5); // using the last 5
+        
         // draw iris
-        int radius = (int)std::round(eyeball[2]);
-        cv::circle(frame, faces[0].tl() + eyeRect.tl() + center, radius, cv::Scalar(0, 0, 255), 2);
-        cv::circle(eye, center, radius, cv::Scalar(255, 255, 255), 2);
+        cv::Point centerPoint(faces[0].tl() + eyeRect.tl() + center);
+        
+        cv::Point leftPoint(centerPoint.x-5, centerPoint.y);
+        cv::Point rightPoint(centerPoint.x+5, centerPoint.y);
+        cv::Point upperPoint(centerPoint.x, centerPoint.y-5);
+        cv::Point downPoint(centerPoint.x, centerPoint.y+5);
+        cv::line(frame, leftPoint, rightPoint, cv::Scalar(0, 0, 255), 1, 8, 0);
+        cv::line(frame, upperPoint, downPoint, cv::Scalar(0, 0, 255), 1, 8, 0);
+        
+        //int radius = (int)std::round(eyeball[2]);
+        //cv::circle(frame, faces[0].tl() + eyeRect.tl() + center, radius, cv::Scalar(0, 0, 255), 2);
+        //cv::circle(eye, center, radius, cv::Scalar(0, 0, 255), 2);
     }
     cv::imshow("Eye", eye);
-    
-    
-    //
+
+    // Detect and draw rigth iris
     cv::Rect rightEyeRect = getRightmostEye(eyes);
     cv::Mat rightEye = face(rightEyeRect);
     cv::Mat grayscaleRightEye;
@@ -157,21 +167,29 @@ void detectEyes(cv::Mat &frame, cv::CascadeClassifier &faceCascade, cv::CascadeC
     cv::equalizeHist(grayscaleRightEye, grayscaleRightEye);
     std::vector<cv::Vec3f> rightEyeCircles;
     cv::HoughCircles(grayscaleRightEye, rightEyeCircles, cv::HOUGH_GRADIENT, 1, rightEye.cols / 8, 250, 15, rightEye.rows / 8, rightEye.rows / 3);
-    
-    //
+
     if (rightEyeCircles.size() > 0)
     {
         cv::Vec3f rightEyeball = getEyeball(rightEye, rightEyeCircles);
         // stabilizing
-        cv::Point center(rightEyeball[0], rightEyeball[1]);
-        rightEyeCenters.push_back(center);
-        center = stabilize(rightEyeCenters, 5); // we are using the last 5
+        cv::Point rightEyeballCenter(rightEyeball[0], rightEyeball[1]);
+        rightEyeCenters.push_back(rightEyeballCenter);
+        rightEyeballCenter = stabilize(rightEyeCenters, 5); // we are using the last 5
         // draw iris
-        int radius = (int)std::round(rightEyeball[2]);
-        cv::circle(frame, faces[0].tl() + rightEyeRect.tl() + center, radius, cv::Scalar(0, 0, 255), 2);
-        cv::circle(rightEye, center, radius, cv::Scalar(255, 255, 255), 2);
+        cv::Point rightIrisCenterPoint(faces[0].tl() + rightEyeRect.tl() + rightEyeballCenter);
+
+        cv::Point leftPoint(rightIrisCenterPoint.x-5, rightIrisCenterPoint.y);
+        cv::Point rightPoint(rightIrisCenterPoint.x+5, rightIrisCenterPoint.y);
+        cv::Point upperPoint(rightIrisCenterPoint.x, rightIrisCenterPoint.y-5);
+        cv::Point downPoint(rightIrisCenterPoint.x, rightIrisCenterPoint.y+5);
+        cv::line(frame, leftPoint, rightPoint, cv::Scalar(0, 0, 255), 1, 8, 0);
+        cv::line(frame, upperPoint, downPoint, cv::Scalar(0, 0, 255), 1, 8, 0);
+
+        //int radius = (int)std::round(rightEyeball[2]);
+        //cv::circle(frame, faces[0].tl() + rightEyeRect.tl() + rightEyeballCenter, radius, cv::Scalar(0, 0, 255), 2);
+        //cv::circle(rightEye, rightEyeballCenter, radius, cv::Scalar(255, 255, 255), 2);
     }
-    cv::imshow("Eye", rightEye);
+    //cv::imshow("Eye", rightEye);
     
 }
 
